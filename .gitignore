@@ -3,6 +3,7 @@ venv/
 .venv/
 env/
 .env/
+.env
 
 # Python cache
 __pycache__/
@@ -13,7 +14,7 @@ __pycache__/
 # IDE
 .vscode/
 .idea/
-E
+
 # OS
 .DS_Store
 Thumbs.dbsdata/
