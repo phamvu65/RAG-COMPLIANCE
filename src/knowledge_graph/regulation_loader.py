@@ -11,6 +11,11 @@ class RegulationLoader:
     Load Regulation Graph từ file JSON vào Neo4j.
     Tách riêng khỏi notebook để có thể tái sử dụng
     và rebuild khi quy định thay đổi.
+
+    Schema sau khi load:
+      Nodes : Activity (13), Condition (4), Role (3), Document (1)
+      Edges : MUST_PRECEDE (6), REQUIRES (4+), PERFORMED_BY (13),
+              DEFINED_IN (17)
     """
 
     def __init__(self, env_path: str = None):
@@ -105,8 +110,14 @@ class RegulationLoader:
 
     def _create_conditions(self, conditions: list,
                             doc_id: str):
+        """
+        Tạo Condition nodes, DEFINED_IN edges (→ Document),
+        và REQUIRES edges (Activity → Condition).
+        """
+        requires_count = 0
         with self.driver.session() as session:
             for cond in conditions:
+                # Tạo Condition node + DEFINED_IN → Document
                 session.run("""
                     MERGE (c:Condition {id: $id})
                     SET c.description    = $description,
@@ -118,8 +129,23 @@ class RegulationLoader:
                     MERGE (c)-[:DEFINED_IN]->(d)
                 """, doc_id=doc_id,
                      **{k: v for k, v in cond.items()
-                        if k not in ['threshold', 'unit']})
+                        if k not in ['threshold', 'unit',
+                                     'linked_activities']})
+
+                # Tạo REQUIRES edges (Activity → Condition)
+                linked = cond.get('linked_activities', [])
+                for act_id in linked:
+                    result = session.run("""
+                        MATCH (a:Activity {id: $act_id})
+                        MATCH (c:Condition {id: $cond_id})
+                        MERGE (a)-[:REQUIRES]->(c)
+                    """, act_id=act_id,
+                         cond_id=cond['id'])
+                    requires_count += 1
+
         print(f"  {len(conditions)} Condition nodes")
+        if requires_count > 0:
+            print(f"  {requires_count} REQUIRES edges")
 
     def _create_roles(self, roles: list):
         with self.driver.session() as session:
@@ -142,32 +168,28 @@ class RegulationLoader:
         print(f"  {len(roles)} Role nodes")
 
     def verify(self) -> dict:
-        """Kiểm tra số lượng node sau khi load."""
-        counts = {}
+        """Kiểm tra số lượng node và edge sau khi load."""
         with self.driver.session() as session:
-            for label in ['Activity', 'Document',
-                          'Condition', 'Role']:
-                r = session.run(
-                    f"MATCH (n:{label}) "
-                    f"RETURN count(n) AS cnt"
-                ).single()
-                counts[label] = r['cnt']
+            counts = {}
+            queries = {
+                'activities'  : "MATCH (n:Activity) RETURN count(n) AS c",
+                'must_precede': "MATCH ()-[r:MUST_PRECEDE]->() RETURN count(r) AS c",
+                'conditions'  : "MATCH (n:Condition) RETURN count(n) AS c",
+                'requires'    : "MATCH ()-[r:REQUIRES]->() RETURN count(r) AS c",
+                'roles'       : "MATCH (n:Role) RETURN count(n) AS c",
+                'performed_by': "MATCH ()-[r:PERFORMED_BY]->() RETURN count(r) AS c",
+                'documents'   : "MATCH (n:Document) RETURN count(n) AS c",
+                'defined_in'  : "MATCH ()-[r:DEFINED_IN]->() RETURN count(r) AS c",
+            }
+            for key, query in queries.items():
+                counts[key] = session.run(query).single()['c']
 
-            r = session.run("""
-                MATCH ()-[r:MUST_PRECEDE]->()
-                RETURN count(r) AS cnt
-            """).single()
-            counts['MUST_PRECEDE'] = r['cnt']
-
-            r = session.run("""
-                MATCH (a:Activity {required: true})
-                RETURN collect(a.name) AS names
-            """).single()
-            counts['required_activities'] = r['names']
-
-        print("\nVerification:")
-        for k, v in counts.items():
-            print(f"  {k:<25}: {v}")
+        print(f"Regulation loaded: "
+              f"{counts['activities']} activities, "
+              f"{counts['must_precede']} sequences, "
+              f"{counts['conditions']} conditions, "
+              f"{counts['requires']} requires, "
+              f"{counts['roles']} roles")
         return counts
 
     def close(self):
