@@ -175,7 +175,6 @@ def add_trace_features(df: pd.DataFrame) -> pd.DataFrame:
 def validate_traces(df: pd.DataFrame) -> pd.DataFrame:
     """
     Kiểm tra và báo cáo chất lượng trace.
-    Không loại bỏ gì thêm — chỉ in thống kê để người dùng quyết định.
     """
     case_stats = df.groupby('case_id').agg(
         num_events    =('activity', 'count'),

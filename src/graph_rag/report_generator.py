@@ -88,11 +88,11 @@ class ComplianceReport:
         )
         print(f"Số sự kiện   : {self.num_events}")
         print(f"Tuân thủ     : "
-              f"{'✅ Có' if self.is_compliant else '❌ Không'}")
+              f"{'Có' if self.is_compliant else 'Không'}")
         print(f"Fitness score: {self.fitness_score:.2f}")
 
         if not self.explained_violations:
-            print(f"\n✅ Không phát hiện vi phạm.")
+            print(f"\nKhông phát hiện vi phạm.")
             return
 
         print(f"\nVi phạm ({self.num_violations}):")
